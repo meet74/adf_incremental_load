@@ -74,23 +74,7 @@
 							"typeProperties": {
 								"source": {
 									"type": "AzureSqlSource",
-									"sqlReaderStoredProcedureName": "[dbo].[GetFilteredData]",
-									"storedProcedureParameters": {
-										"LastIngestionDate": {
-											"type": "Datetime",
-											"value": {
-												"value": "@activity('get_last_ingestion_date').output.firstRow.last_ingestion_date",
-												"type": "Expression"
-											}
-										},
-										"TableName": {
-											"type": "String",
-											"value": {
-												"value": "@item().table_name",
-												"type": "Expression"
-											}
-										}
-									},
+									"sqlReaderQuery": "SELECT hotel_name,rating_and_delivery_time,food_type,location,offer FROM @{item().table_name}\nWHERE insertion_date  > @{formatDateTime(activity('Lookup1').output.value[0].last_ingestion_date,'yyyy-MM-dd')} ",
 									"queryTimeout": "02:00:00",
 									"partitionOption": "None"
 								},
