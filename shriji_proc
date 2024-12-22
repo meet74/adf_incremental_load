@@ -1,0 +1,21 @@
+CREATE PROCEDURE GetFilteredData
+    @TableName NVARCHAR(128),
+    @LastIngestionDate DATETIME
+AS
+BEGIN
+    -- Declare a variable to hold the dynamic SQL query
+    DECLARE @SQL NVARCHAR(MAX);
+
+    -- Build the dynamic SQL query
+    SET @SQL = N'
+        SELECT hotel_name, rating_and_delivery_time, food_type, location, offer
+        FROM ' + QUOTENAME(@TableName) + N'
+        WHERE insertion_date > @LastIngestionDate';
+
+    -- Execute the dynamic SQL query
+    EXEC sp_executesql
+        @SQL,
+        N'@LastIngestionDate DATETIME',
+        @LastIngestionDate;
+END;
+GO
