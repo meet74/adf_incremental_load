@@ -1,0 +1,9 @@
+{
+	"name": "shrijiadf",
+	"location": "eastus",
+	"identity": {
+		"type": "SystemAssigned",
+		"principalId": "a2eed79b-3ea9-4bb8-817a-1e1fb9c3cad8",
+		"tenantId": "e8e9a59a-2ba7-41ba-9a52-cde144bffcfa"
+	}
+}

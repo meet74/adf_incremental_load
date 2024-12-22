@@ -1,0 +1,183 @@
+{
+	"name": "pl_incremental_load",
+	"properties": {
+		"activities": [
+			{
+				"name": "get_source_lastupdate_value",
+				"type": "Lookup",
+				"dependsOn": [],
+				"policy": {
+					"timeout": "0.12:00:00",
+					"retry": 0,
+					"retryIntervalInSeconds": 30,
+					"secureOutput": false,
+					"secureInput": false
+				},
+				"userProperties": [],
+				"typeProperties": {
+					"source": {
+						"type": "AzureSqlSource",
+						"sqlReaderQuery": {
+							"value": "SELECT table_name, last_updated\nFROM MetadataTable\nWHERE last_updated > watermark_column;\n",
+							"type": "Expression"
+						},
+						"queryTimeout": "02:00:00",
+						"partitionOption": "None"
+					},
+					"dataset": {
+						"referenceName": "shrijidb",
+						"type": "DatasetReference",
+						"parameters": {
+							"tableName": "MetadataTable"
+						}
+					},
+					"firstRowOnly": false
+				}
+			},
+			{
+				"name": "iterate_table",
+				"type": "ForEach",
+				"dependsOn": [
+					{
+						"activity": "get_source_lastupdate_value",
+						"dependencyConditions": [
+							"Succeeded"
+						]
+					}
+				],
+				"userProperties": [],
+				"typeProperties": {
+					"items": {
+						"value": "@activity('get_source_lastupdate_value').output.value",
+						"type": "Expression"
+					},
+					"activities": [
+						{
+							"name": "copy_incremental_data",
+							"type": "Copy",
+							"dependsOn": [
+								{
+									"activity": "get_last_ingestion_date",
+									"dependencyConditions": [
+										"Succeeded"
+									]
+								}
+							],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderStoredProcedureName": "[dbo].[GetFilteredData]",
+									"storedProcedureParameters": {
+										"LastIngestionDate": {
+											"type": "Datetime",
+											"value": {
+												"value": "@activity('get_last_ingestion_date').output.firstRow.last_ingestion_date",
+												"type": "Expression"
+											}
+										},
+										"TableName": {
+											"type": "String",
+											"value": {
+												"value": "@item().table_name",
+												"type": "Expression"
+											}
+										}
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"sink": {
+									"type": "AzureSqlSink",
+									"writeBehavior": "insert",
+									"sqlWriterUseTableLock": false,
+									"disableMetricsCollection": false
+								},
+								"enableStaging": false,
+								"translator": {
+									"type": "TabularTranslator",
+									"typeConversion": true,
+									"typeConversionSettings": {
+										"allowDataTruncation": true,
+										"treatBooleanAsNumber": false
+									}
+								}
+							},
+							"inputs": [
+								{
+									"referenceName": "shrijidb",
+									"type": "DatasetReference",
+									"parameters": {
+										"tableName": {
+											"value": "@item().table_name",
+											"type": "Expression"
+										}
+									}
+								}
+							],
+							"outputs": [
+								{
+									"referenceName": "ds_shrijidb2",
+									"type": "DatasetReference",
+									"parameters": {
+										"tableName": "Hotel"
+									}
+								}
+							]
+						},
+						{
+							"name": "get_last_ingestion_date",
+							"type": "Lookup",
+							"dependsOn": [],
+							"policy": {
+								"timeout": "0.12:00:00",
+								"retry": 0,
+								"retryIntervalInSeconds": 30,
+								"secureOutput": false,
+								"secureInput": false
+							},
+							"userProperties": [],
+							"typeProperties": {
+								"source": {
+									"type": "AzureSqlSource",
+									"sqlReaderQuery": {
+										"value": "SELECT MAX(insertion_date) AS last_ingestion_date FROM @{item().table_name}",
+										"type": "Expression"
+									},
+									"queryTimeout": "02:00:00",
+									"partitionOption": "None"
+								},
+								"dataset": {
+									"referenceName": "ds_shrijidb2",
+									"type": "DatasetReference",
+									"parameters": {
+										"tableName": {
+											"value": "@item().table_name",
+											"type": "Expression"
+										}
+									}
+								},
+								"firstRowOnly": true
+							}
+						}
+					]
+				}
+			}
+		],
+		"variables": {
+			"tableNames": {
+				"type": "Array"
+			}
+		},
+		"annotations": [],
+		"lastPublishTime": "2024-12-22T20:13:54Z"
+	},
+	"type": "Microsoft.DataFactory/factories/pipelines"
+}
