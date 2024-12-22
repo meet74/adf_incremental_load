@@ -1,0 +1,777 @@
+{
+	"$schema": "http://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"type": "string",
+			"metadata": "Data Factory name",
+			"defaultValue": "shrijiadf"
+		},
+		"ls_shrijidb_password": {
+			"type": "secureString",
+			"metadata": "Secure string for 'password' of 'ls_shrijidb'"
+		},
+		"ls_shrijidb2_password": {
+			"type": "secureString",
+			"metadata": "Secure string for 'password' of 'ls_shrijidb2'"
+		},
+		"shrijiadls_accountKey": {
+			"type": "secureString",
+			"metadata": "Secure string for 'accountKey' of 'shrijiadls'"
+		},
+		"ls_shrijidb_properties_typeProperties_server": {
+			"type": "string",
+			"defaultValue": "shrijiserver7474.database.windows.net"
+		},
+		"ls_shrijidb_properties_typeProperties_database": {
+			"type": "string",
+			"defaultValue": "shrijidb1"
+		},
+		"ls_shrijidb_properties_typeProperties_userName": {
+			"type": "string",
+			"defaultValue": "shriji"
+		},
+		"ls_shrijidb2_properties_typeProperties_server": {
+			"type": "string",
+			"defaultValue": "shrijiserver7474.database.windows.net"
+		},
+		"ls_shrijidb2_properties_typeProperties_database": {
+			"type": "string",
+			"defaultValue": "shrijidb2"
+		},
+		"ls_shrijidb2_properties_typeProperties_userName": {
+			"type": "string",
+			"defaultValue": "shriji"
+		},
+		"shrijiadls_properties_typeProperties_url": {
+			"type": "string",
+			"defaultValue": "https://shrijiadls.dfs.core.windows.net/"
+		}
+	},
+	"variables": {
+		"factoryId": "[concat('Microsoft.DataFactory/factories/', parameters('factoryName'))]"
+	},
+	"resources": [
+		{
+			"name": "[concat(parameters('factoryName'), '/pipeline1')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Copy data1",
+						"type": "Copy",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"sink": {
+								"type": "AzureSqlSink",
+								"writeBehavior": "insert",
+								"sqlWriterUseTableLock": false
+							},
+							"enableStaging": false,
+							"translator": {
+								"type": "TabularTranslator",
+								"typeConversion": true,
+								"typeConversionSettings": {
+									"allowDataTruncation": true,
+									"treatBooleanAsNumber": false
+								}
+							}
+						},
+						"inputs": [
+							{
+								"referenceName": "shrijidb",
+								"type": "DatasetReference",
+								"parameters": {
+									"tableName": "Hotel"
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "ds_shrijidb2",
+								"type": "DatasetReference",
+								"parameters": {
+									"tableName": "Hotel"
+								}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"annotations": [],
+				"lastPublishTime": "2024-12-20T04:09:04Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/shrijidb')]",
+				"[concat(variables('factoryId'), '/datasets/ds_shrijidb2')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_incremental_load')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "get_source_lastupdate_value",
+						"type": "Lookup",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "AzureSqlSource",
+								"sqlReaderQuery": {
+									"value": "SELECT table_name, last_updated\nFROM MetadataTable\nWHERE last_updated > watermark_column;\n",
+									"type": "Expression"
+								},
+								"queryTimeout": "02:00:00",
+								"partitionOption": "None"
+							},
+							"dataset": {
+								"referenceName": "shrijidb",
+								"type": "DatasetReference",
+								"parameters": {
+									"tableName": "MetadataTable"
+								}
+							},
+							"firstRowOnly": false
+						}
+					},
+					{
+						"name": "iterate_table",
+						"type": "ForEach",
+						"dependsOn": [
+							{
+								"activity": "get_source_lastupdate_value",
+								"dependencyConditions": [
+									"Succeeded"
+								]
+							}
+						],
+						"userProperties": [],
+						"typeProperties": {
+							"items": {
+								"value": "@activity('get_source_lastupdate_value').output.value",
+								"type": "Expression"
+							},
+							"activities": [
+								{
+									"name": "copy_incremental_data",
+									"type": "Copy",
+									"dependsOn": [
+										{
+											"activity": "get_last_ingestion_date",
+											"dependencyConditions": [
+												"Succeeded"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "AzureSqlSource",
+											"sqlReaderStoredProcedureName": "[[dbo].[GetFilteredData]",
+											"storedProcedureParameters": {
+												"LastIngestionDate": {
+													"type": "Datetime",
+													"value": {
+														"value": "@activity('get_last_ingestion_date').output.firstRow.last_ingestion_date",
+														"type": "Expression"
+													}
+												},
+												"TableName": {
+													"type": "String",
+													"value": {
+														"value": "@item().table_name",
+														"type": "Expression"
+													}
+												}
+											},
+											"queryTimeout": "02:00:00",
+											"partitionOption": "None"
+										},
+										"sink": {
+											"type": "AzureSqlSink",
+											"writeBehavior": "insert",
+											"sqlWriterUseTableLock": false,
+											"disableMetricsCollection": false
+										},
+										"enableStaging": false,
+										"translator": {
+											"type": "TabularTranslator",
+											"typeConversion": true,
+											"typeConversionSettings": {
+												"allowDataTruncation": true,
+												"treatBooleanAsNumber": false
+											}
+										}
+									},
+									"inputs": [
+										{
+											"referenceName": "shrijidb",
+											"type": "DatasetReference",
+											"parameters": {
+												"tableName": {
+													"value": "@item().table_name",
+													"type": "Expression"
+												}
+											}
+										}
+									],
+									"outputs": [
+										{
+											"referenceName": "ds_shrijidb2",
+											"type": "DatasetReference",
+											"parameters": {
+												"tableName": "Hotel"
+											}
+										}
+									]
+								},
+								{
+									"name": "get_last_ingestion_date",
+									"type": "Lookup",
+									"dependsOn": [],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"source": {
+											"type": "AzureSqlSource",
+											"sqlReaderQuery": {
+												"value": "SELECT MAX(insertion_date) AS last_ingestion_date FROM @{item().table_name}",
+												"type": "Expression"
+											},
+											"queryTimeout": "02:00:00",
+											"partitionOption": "None"
+										},
+										"dataset": {
+											"referenceName": "ds_shrijidb2",
+											"type": "DatasetReference",
+											"parameters": {
+												"tableName": {
+													"value": "@item().table_name",
+													"type": "Expression"
+												}
+											}
+										},
+										"firstRowOnly": true
+									}
+								},
+								{
+									"name": "Update_metadata_table",
+									"type": "SqlServerStoredProcedure",
+									"dependsOn": [
+										{
+											"activity": "copy_incremental_data",
+											"dependencyConditions": [
+												"Succeeded"
+											]
+										}
+									],
+									"policy": {
+										"timeout": "0.12:00:00",
+										"retry": 0,
+										"retryIntervalInSeconds": 30,
+										"secureOutput": false,
+										"secureInput": false
+									},
+									"userProperties": [],
+									"typeProperties": {
+										"storedProcedureName": "[[dbo].[Update_metadatatable]",
+										"storedProcedureParameters": {
+											"TableName": {
+												"value": {
+													"value": "@item().table_name",
+													"type": "Expression"
+												},
+												"type": "String"
+											}
+										}
+									},
+									"linkedServiceName": {
+										"referenceName": "ls_shrijidb",
+										"type": "LinkedServiceReference"
+									}
+								}
+							]
+						}
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"variables": {
+					"tableNames": {
+						"type": "Array"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2024-12-22T20:13:54Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/shrijidb')]",
+				"[concat(variables('factoryId'), '/datasets/ds_shrijidb2')]",
+				"[concat(variables('factoryId'), '/linkedServices/ls_shrijidb')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_shrijiifood')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Copy data1",
+						"type": "Copy",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "DelimitedTextSource",
+								"storeSettings": {
+									"type": "AzureBlobFSReadSettings",
+									"recursive": true,
+									"enablePartitionDiscovery": false
+								},
+								"formatSettings": {
+									"type": "DelimitedTextReadSettings"
+								}
+							},
+							"sink": {
+								"type": "AzureSqlSink",
+								"writeBehavior": "insert",
+								"sqlWriterUseTableLock": false
+							},
+							"enableStaging": false,
+							"translator": {
+								"type": "TabularTranslator",
+								"typeConversion": true,
+								"typeConversionSettings": {
+									"allowDataTruncation": true,
+									"treatBooleanAsNumber": false
+								}
+							}
+						},
+						"inputs": [
+							{
+								"referenceName": "shrijjiadlsdataset",
+								"type": "DatasetReference",
+								"parameters": {
+									"fileName": "foodData.csv"
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "shrijidb",
+								"type": "DatasetReference",
+								"parameters": {
+									"tableName": "Hotel"
+								}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"variables": {
+					"tableNames": {
+						"type": "Array"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2024-12-20T03:40:55Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/shrijjiadlsdataset')]",
+				"[concat(variables('factoryId'), '/datasets/shrijidb')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/pl_shrijilaptop')]",
+			"type": "Microsoft.DataFactory/factories/pipelines",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"activities": [
+					{
+						"name": "Copy data1",
+						"type": "Copy",
+						"dependsOn": [],
+						"policy": {
+							"timeout": "0.12:00:00",
+							"retry": 0,
+							"retryIntervalInSeconds": 30,
+							"secureOutput": false,
+							"secureInput": false
+						},
+						"userProperties": [],
+						"typeProperties": {
+							"source": {
+								"type": "DelimitedTextSource",
+								"storeSettings": {
+									"type": "AzureBlobFSReadSettings",
+									"recursive": true,
+									"enablePartitionDiscovery": false
+								},
+								"formatSettings": {
+									"type": "DelimitedTextReadSettings"
+								}
+							},
+							"sink": {
+								"type": "AzureSqlSink",
+								"writeBehavior": "insert",
+								"sqlWriterUseTableLock": false,
+								"disableMetricsCollection": false
+							},
+							"enableStaging": false,
+							"enableSkipIncompatibleRow": true,
+							"translator": {
+								"type": "TabularTranslator",
+								"typeConversion": true,
+								"typeConversionSettings": {
+									"allowDataTruncation": true,
+									"treatBooleanAsNumber": false
+								}
+							}
+						},
+						"inputs": [
+							{
+								"referenceName": "shrijjiadlsdataset",
+								"type": "DatasetReference",
+								"parameters": {
+									"fileName": "laptopData.csv"
+								}
+							}
+						],
+						"outputs": [
+							{
+								"referenceName": "shrijidb",
+								"type": "DatasetReference",
+								"parameters": {
+									"tableName": "Laptop"
+								}
+							}
+						]
+					}
+				],
+				"policy": {
+					"elapsedTimeMetric": {}
+				},
+				"variables": {
+					"tableNames": {
+						"type": "Array"
+					}
+				},
+				"annotations": [],
+				"lastPublishTime": "2024-12-20T03:40:55Z"
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/shrijjiadlsdataset')]",
+				"[concat(variables('factoryId'), '/datasets/shrijidb')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ds_shrijidb2')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "ls_shrijidb2",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"tableName": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [],
+				"typeProperties": {
+					"schema": "dbo",
+					"table": {
+						"value": "@dataset().tableName",
+						"type": "Expression"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_shrijidb2')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/shrijidb')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "ls_shrijidb",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"tableName": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "AzureSqlTable",
+				"schema": [],
+				"typeProperties": {
+					"schema": "dbo",
+					"table": {
+						"value": "@dataset().tableName",
+						"type": "Expression"
+					}
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/ls_shrijidb')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/shrijjiadlsdataset')]",
+			"type": "Microsoft.DataFactory/factories/datasets",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"linkedServiceName": {
+					"referenceName": "shrijiadls",
+					"type": "LinkedServiceReference"
+				},
+				"parameters": {
+					"fileName": {
+						"type": "string"
+					}
+				},
+				"annotations": [],
+				"type": "DelimitedText",
+				"typeProperties": {
+					"location": {
+						"type": "AzureBlobFSLocation",
+						"fileName": {
+							"value": "@dataset().fileName",
+							"type": "Expression"
+						},
+						"fileSystem": "shriji"
+					},
+					"columnDelimiter": ",",
+					"escapeChar": "\\",
+					"firstRowAsHeader": true,
+					"quoteChar": "\""
+				},
+				"schema": [
+					{
+						"name": "Unnamed: 0",
+						"type": "String"
+					},
+					{
+						"name": "Company",
+						"type": "String"
+					},
+					{
+						"name": "TypeName",
+						"type": "String"
+					},
+					{
+						"name": "Inches",
+						"type": "String"
+					},
+					{
+						"name": "ScreenResolution",
+						"type": "String"
+					},
+					{
+						"name": "Cpu",
+						"type": "String"
+					},
+					{
+						"name": "Ram",
+						"type": "String"
+					},
+					{
+						"name": "Memory",
+						"type": "String"
+					},
+					{
+						"name": "Gpu",
+						"type": "String"
+					},
+					{
+						"name": "OpSys",
+						"type": "String"
+					},
+					{
+						"name": "Weight",
+						"type": "String"
+					},
+					{
+						"name": "Price",
+						"type": "String"
+					}
+				]
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/linkedServices/shrijiadls')]"
+			]
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ls_shrijidb')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureSqlDatabase",
+				"typeProperties": {
+					"server": "[parameters('ls_shrijidb_properties_typeProperties_server')]",
+					"database": "[parameters('ls_shrijidb_properties_typeProperties_database')]",
+					"encrypt": "mandatory",
+					"trustServerCertificate": false,
+					"authenticationType": "SQL",
+					"userName": "[parameters('ls_shrijidb_properties_typeProperties_userName')]",
+					"password": {
+						"type": "SecureString",
+						"value": "[parameters('ls_shrijidb_password')]"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/ls_shrijidb2')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureSqlDatabase",
+				"typeProperties": {
+					"server": "[parameters('ls_shrijidb2_properties_typeProperties_server')]",
+					"database": "[parameters('ls_shrijidb2_properties_typeProperties_database')]",
+					"encrypt": "mandatory",
+					"trustServerCertificate": false,
+					"authenticationType": "SQL",
+					"userName": "[parameters('ls_shrijidb2_properties_typeProperties_userName')]",
+					"password": {
+						"type": "SecureString",
+						"value": "[parameters('ls_shrijidb2_password')]"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/shrijiadls')]",
+			"type": "Microsoft.DataFactory/factories/linkedServices",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"annotations": [],
+				"type": "AzureBlobFS",
+				"typeProperties": {
+					"url": "[parameters('shrijiadls_properties_typeProperties_url')]",
+					"accountKey": {
+						"type": "SecureString",
+						"value": "[parameters('shrijiadls_accountKey')]"
+					}
+				}
+			},
+			"dependsOn": []
+		},
+		{
+			"name": "[concat(parameters('factoryName'), '/dataflow1')]",
+			"type": "Microsoft.DataFactory/factories/dataflows",
+			"apiVersion": "2018-06-01",
+			"properties": {
+				"type": "MappingDataFlow",
+				"typeProperties": {
+					"sources": [
+						{
+							"dataset": {
+								"referenceName": "shrijidb",
+								"type": "DatasetReference"
+							},
+							"name": "source1"
+						}
+					],
+					"sinks": [
+						{
+							"dataset": {
+								"referenceName": "ds_shrijidb2",
+								"type": "DatasetReference"
+							},
+							"name": "sink1"
+						}
+					],
+					"transformations": [
+						{
+							"name": "select1"
+						}
+					],
+					"scriptLines": [
+						"source(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     isolationLevel: 'READ_UNCOMMITTED',",
+						"     format: 'table') ~> source1",
+						"source1 select(skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true) ~> select1",
+						"select1 sink(allowSchemaDrift: true,",
+						"     validateSchema: false,",
+						"     deletable:false,",
+						"     insertable:true,",
+						"     updateable:false,",
+						"     upsertable:false,",
+						"     format: 'table',",
+						"     skipDuplicateMapInputs: true,",
+						"     skipDuplicateMapOutputs: true,",
+						"     errorHandlingOption: 'stopOnFirstError') ~> sink1"
+					]
+				}
+			},
+			"dependsOn": [
+				"[concat(variables('factoryId'), '/datasets/shrijidb')]",
+				"[concat(variables('factoryId'), '/datasets/ds_shrijidb2')]"
+			]
+		}
+	]
+}

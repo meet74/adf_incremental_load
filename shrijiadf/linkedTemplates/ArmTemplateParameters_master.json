@@ -1,0 +1,45 @@
+{
+	"$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {
+		"factoryName": {
+			"value": "shrijiadf"
+		},
+		"ls_shrijidb_password": {
+			"value": ""
+		},
+		"ls_shrijidb2_password": {
+			"value": ""
+		},
+		"shrijiadls_accountKey": {
+			"value": ""
+		},
+		"ls_shrijidb_properties_typeProperties_server": {
+			"value": "shrijiserver7474.database.windows.net"
+		},
+		"ls_shrijidb_properties_typeProperties_database": {
+			"value": "shrijidb1"
+		},
+		"ls_shrijidb_properties_typeProperties_userName": {
+			"value": "shriji"
+		},
+		"ls_shrijidb2_properties_typeProperties_server": {
+			"value": "shrijiserver7474.database.windows.net"
+		},
+		"ls_shrijidb2_properties_typeProperties_database": {
+			"value": "shrijidb2"
+		},
+		"ls_shrijidb2_properties_typeProperties_userName": {
+			"value": "shriji"
+		},
+		"shrijiadls_properties_typeProperties_url": {
+			"value": "https://shrijiadls.dfs.core.windows.net/"
+		},
+		"containerUri": {
+			"value": ""
+		},
+		"containerSasToken": {
+			"value": ""
+		}
+	}
+}
